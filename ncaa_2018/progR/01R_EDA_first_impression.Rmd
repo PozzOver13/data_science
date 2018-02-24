@@ -1,0 +1,44 @@
+---
+title: "01 EDA - first insights"
+output: html_notebook
+---
+
+## Introduction
+
+Let's the March Madness begins! 
+Even though, predicting the probability of the NCAA tournament it is clearly a complex topic, the first move in order to do so it is to understand the historical data that we had.
+
+We will start observing just from 2014 to 2017.
+
+```{r}
+
+#### SET UP #### 
+require(tidyverse)
+
+#### DATA IMPORT ####
+setwd("~/Documents/GitHub/data_science/ncaa_2018")
+results = read_csv("~/datainput/DataFiles/RegularSeasonCompactResults.csv")
+seeds = read_csv("/datainput/DataFiles/NCAATourneySeeds.csv")
+teams = read_csv("/datainput/DataFiles/Teams.csv")
+coaches = read_csv("/datainput/DataFiles/TeamCoaches.csv")
+
+time_horizon = 2014:2017
+
+# selecting just the season in which we are interested in
+results_ok = results %>%
+  filter(Season %in% time_horizon)
+
+seeds_ok = seeds %>%
+  filter(Season %in% time_horizon)
+
+```
+
+In order to start our EDA, we need to set our hypothesis:
+
+1. Home / Away probably doesn't matter there we need to focus on seeds
+2. We need to aggregate results in order to understand the better defensive teams ("offense sells tickets, defense wins championships")
+3. We need to incluede the quality of the coaches
+
+
+
+
