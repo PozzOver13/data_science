@@ -206,7 +206,7 @@ df_team_model_results %>%
 # id_model = 
 #   df_team_model_results$model_id[df_team_model_results$model_logloss ==
 #                                        min(df_team_model_results$model_logloss)]
-id_model = 805
+id_model = 806
 
 # calculating the ultimate score
 slct_vars = regMat[id_model,] %>% as.vector() %>% as.logical()
@@ -230,10 +230,113 @@ training_score = training_score %>%
   bind_cols(df_team_score_model_final %>%
               select(team_score))
 
+#### RANKING SCORE ####
+# rank score predictors
+deltas = names(training_score)[names(training_score) %>% 
+                                 str_detect("^lgt_")]
+var_rank_score = c("lgt_delta_nrm_MOR",
+                    "lgt_delta_nrm_POM",
+                    "lgt_delta_nrm_SAG")
+
+# creating all combination of predictors
+regMat <- expand.grid(c(TRUE,FALSE), c(TRUE,FALSE),
+                      c(TRUE,FALSE))
+names(regMat) <- var_rank_score
+
+model_list = vector("list", dim(regMat)[1]-1) 
+loglossmodels = vector("list", dim(regMat)[1]-1)
+n_vars_list = vector("list", dim(regMat)[1]-1)
+n_vars_sign_list = vector("list", dim(regMat)[1]-1)
+valid_model = vector("list", dim(regMat)[1]-1)
+
+# loop in order to understand which predictors are more valuable 
+# in order to reduce the logloss metric
+for (i in 1:length(loglossmodels)) {
+  
+  slct_vars = regMat[i,] %>% as.vector() %>% as.logical()
+  
+  form_rank_score = paste0("target~",
+                           stri_flatten(var_rank_score[slct_vars], "+"), "-1")
+  
+  predict_games = glm(as.formula(form_rank_score), 
+                      data = training, 
+                      family = "binomial") %>% 
+    broom::augment(type.predict = "response") %>% 
+    mutate(y_hat = .fitted) 
+  
+  n_vars = glm(as.formula(form_rank_score), 
+               data = training, 
+               family = "binomial") %>% 
+    broom::tidy() %>% 
+    pull(p.value)
+  
+  betas = glm(as.formula(form_rank_score), 
+              data = training, 
+              family = "binomial") %>% 
+    coefficients()
+  
+  loglossmodels[[i]] <- log_loss(predict_games$y_hat,
+                                 predict_games$target)
+  
+  model_list[[i]] <- stri_flatten(var_rank_score[slct_vars], " ")
+  n_vars_list[[i]] <- length(var_rank_score[slct_vars])
+  n_vars_sign_list[[i]] <- sum(n_vars < 0.05) / length(n_vars)
+  valid_model[[i]] <- all(!is.na(betas))
+  
+}
+# summarizing results into a single dataframe
+df_rank_model_results = data.frame(model_id = seq(1, dim(regMat)[1]-1, 1),
+                                   model_descr = model_list %>% unlist(),
+                                   model_n_var = n_vars_list %>% unlist(),
+                                   model_n_var_sign = n_vars_sign_list %>% unlist(),
+                                   model_logloss = loglossmodels %>% unlist(),
+                                   model_valid = valid_model %>% unlist()) %>%
+  filter(model_valid) %>%
+  arrange(model_logloss)
+
+# visualizing the final results
+df_rank_model_results %>%
+  ggplot(aes(model_id, model_logloss)) +
+  geom_point(col = "navajowhite3") +
+  labs(title = "Rank Score - Logloss evolution through different models") +
+  theme_pozzover
+
+# idenitify the best model
+# id_model = 
+#   df_team_model_results$model_id[df_team_model_results$model_logloss ==
+#                                        min(df_team_model_results$model_logloss)]
+id_model = 7
+
+# calculating the ultimate score
+slct_vars = regMat[id_model,] %>% as.vector() %>% as.logical()
+
+form_rank_score = paste0("target~",
+                         stri_flatten(var_rank_score[slct_vars], "+"), "-1")
+
+glm(as.formula(form_rank_score), 
+    data = training, 
+    family = "binomial") %>% 
+  summary()
+
+rank_score_model_final = glm(as.formula(form_rank_score), 
+                             data = training, 
+                             family = "binomial")
+df_rank_score_model_final = rank_score_model_final %>% 
+  broom::augment() %>% 
+  mutate(rank_score = .fitted) 
+
+training_score = training_score %>%
+  bind_cols(df_rank_score_model_final %>%
+              select(rank_score))
+
+
+
+
+
 #### MAD SCORE ####
 # catchy name for the synthetic score
 # MAD_SCORE = March Madness Score
-var_mad_score = c("coach_score", "team_score")
+var_mad_score = c("coach_score", "team_score", "rank_score")
 form_mad_score = paste0("target~",
                         stri_flatten(var_mad_score, "+"), "-1")
 
@@ -318,12 +421,15 @@ df_univ_plot_final_1 %>%
 #### SAVE ####
 coach_score_model_final %>% summary()
 team_score_model_final %>% summary()
+rank_score_model_final %>% summary()
 mad_score_model_final %>% summary()
 
 save(coach_score_model_final, 
      file = "progR/02R_woe_logistic_model_coach_score.rdata")
 save(team_score_model_final, 
      file = "progR/02R_woe_logistic_model_team_score.rdata")
+save(rank_score_model_final, 
+     file = "progR/02R_woe_logistic_model_rank_score.rdata")
 save(mad_score_model_final, 
      file = "progR/02R_woe_logistic_model_marchmadness_score.rdata")
 

@@ -59,3 +59,5 @@ df_expl_woe = df %>%
 #### SAVE ####
 save(df_expl_woe,
      file = "datasets/02R_explanatory_woe.rdata")
+save(df_woe_final,
+     file = "datasets/02R_woe_classes.rdata")

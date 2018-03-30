@@ -63,7 +63,10 @@ df_Xs = df_teams_plus_final %>%
          nrm_c_wins, 
          nrm_c_top_wins, 
          nrm_c_season, 
-         nrm_c_champ_wins) 
+         nrm_c_champ_wins,
+         nrm_MOR,
+         nrm_POM,
+         nrm_SAG) 
 
 # class creation  
 #mutate(seed_class = ifelse(is.na(seed_n), "no_seed_class",
@@ -124,7 +127,7 @@ training = training %>%
 ## Graphical analysis in order to select the best predictors
 training %>%
   filter(Season == 2011) %>%
-  ggplot(aes(delta_tov_ratio_m, target)) +
+  ggplot(aes(delta_nrm_MOR, target)) +
   geom_point() +
   geom_smooth(method = "glm", 
               method.args = list(family = "binomial"))

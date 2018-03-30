@@ -25,6 +25,10 @@ coaches =
   read_csv("datainput/DataFiles/TeamCoaches.csv")
 mm_results = 
   read_csv("datainput/DataFiles/NCAATourneyCompactResults.csv")
+mm_conf = 
+  read_csv("datainput/DataFiles/TeamConferences.csv")
+massey = 
+  read_csv("datainput/MasseyOrdinals.csv")
 
 #### FEATURE TRANSFORMATION ####
 # clean seed information
@@ -245,11 +249,30 @@ coach_cleaned = coaches %>%
   mutate(N = row_number()) %>%
   filter(N == max(N))
 
+massey_clean = massey %>%
+  filter(SystemName %in% c("POM", "MOR", "SAG"),
+         Season %in% 2008:2017,
+         RankingDayNum > 130) %>%
+  spread(SystemName, OrdinalRank) %>%
+  mutate_at(vars(MOR, POM, SAG), funs(ifelse(is.na(.), max(., na.rm = T), .))) %>%
+  as.data.frame()
+
+massey_clean = massey_clean %>%
+  group_by(Season) %>%
+  mutate(nrm_MOR = 1 - ((MOR - min(MOR)) / (max(MOR) - min(MOR))),
+         nrm_POM = 1 - ((POM - min(POM)) / (max(POM) - min(POM))),
+         nrm_SAG = 1- ((SAG - min(SAG)) / (max(SAG) - min(SAG)))) %>%
+  select(-RankingDayNum) 
+
 df_teams_plus = df_teams_plus %>%
   left_join(coach_cleaned %>%
               select(TeamID, Season, nrm_c_wins, 
                      nrm_c_top_wins, nrm_c_season, 
                      nrm_c_champ_wins),
+            by = c("TeamID", "Season")) %>%
+  left_join(massey_clean %>%
+              select(TeamID, Season, nrm_MOR,
+                     nrm_POM,nrm_SAG),
             by = c("TeamID", "Season")) 
 
 
