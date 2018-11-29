@@ -1,0 +1,252 @@
+---
+title: "Serie A - Analisi esplorativa"
+output:
+  html_document:
+    df_print: paged
+---
+
+### Introduzione
+
+Per prima cosa occorre effettuare un' analisi esplorativa che permetta di fissare dei numeri ed avere piu' chiaro il dominio in cui ci stiamo muovendo.
+Il dataset e' stato precedentemente pulito e preparato per l'analisi.
+L'orizzonte temporale considera le stagioni 2015/2016, 2016/2017, 2017/2018.
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+for (i in 1:10) gc()
+
+#### SETUP ####
+require(dplyr)
+require(tidyr)
+require(readr)
+require(ggplot2)
+require(stringi)
+require(stringr)
+require(corrplot)
+require(gridExtra)
+
+path_datasets <- "~/Google Drive/Tempo_Libero/" 
+path_functs <- "~/Documents/GitHub/data_science/AFSM/prog/functions/"
+
+#### DATA IMPORT ####
+df_in <- read.csv(paste0(path_datasets, "AFSM/Stats/00R_DT_campione_2015_2018.csv"),
+                     sep = "|", stringsAsFactors = F)
+
+classifica <- read.csv(paste0(path_datasets, "AFSM/Stats/classifica_serie_A_2014_2018.csv"),
+                     sep = ";", stringsAsFactors = F)
+
+```
+
+### Analisi per squadra
+
+Per prima cosa andiamo ad osservare come hanno performato le squadre.
+A parte il dominio della Juventus sara' interessante andare ad approfondire la performance delle altre squadre, che da anni non riescono a vincere e si alternano tra il secondo e ultimo posto.
+
+```{r fig.height=10, fig.width=12, message=FALSE, warning=FALSE}
+classifica %>%
+  ggplot(aes(reorder(Squadra, -Pt), Pt, fill = factor(Anno))) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.7) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Punti medi per stagione", 
+       x = "squadre", y = "punti medi",
+       fill = "classe squadra") +
+  coord_cartesian(ylim = c(20, 100))
+
+```
+
+La visione dei punti per anno ci puo' suggerire quali sono i trend per ogni singola squadra.
+Capire se sono in un ciclo con trend positivo oppure negativo.
+Ad esempio il grafico sembra suggerire un trend positivo per il Milan mentre uno nettamente negativo per il sassuolo.
+
+```{r fig.height=12, message=FALSE, warning=FALSE}
+class_aggr <- classifica %>% 
+  mutate(DR = as.numeric(DR)) %>%
+  group_by(Squadra) %>%
+  summarise(pos_media = mean(Pos),
+            pt_media = mean(Pt),
+            gf_media = mean(GF),
+            gs_media = mean(GS),
+            quote_media = mean(Quote)) %>%
+  ungroup() %>%
+  mutate(squadra_classe = cut(pt_media, breaks = quantile(pt_media, probs = seq(0,1,0.1)), labels = F, include.lowest = T))
+
+gridExtra::grid.arrange(
+  class_aggr %>%
+  ggplot(aes(reorder(Squadra, -pt_media), pt_media, fill = factor(squadra_classe))) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  geom_hline(yintercept = median(classifica$Pt), linetype = 2, col = "darkblue") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Punti medi per stagione", 
+       x = "squadre", y = "punti medi",
+       fill = "classe squadra") +
+    guides(fill = FALSE) +
+  coord_cartesian(ylim = c(0, 100)),
+  class_aggr %>%
+  ggplot(aes(reorder(Squadra, -gf_media), gf_media, fill = factor(squadra_classe))) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  geom_hline(yintercept = median(classifica$GF), linetype = 2, col = "darkblue") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Goal fatti medi per stagione", 
+       x = "squadre", y = "goal fatti medi",
+       fill = "classe squadra") +
+    guides(fill = FALSE) +
+  coord_cartesian(ylim = c(0, 100)),
+  class_aggr %>%
+  ggplot(aes(reorder(Squadra, gs_media), gs_media, fill = factor(squadra_classe))) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  geom_hline(yintercept = median(classifica$GS), linetype = 2, col = "darkblue") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Goal subiti medi per stagione", 
+       x = "squadre", y = "goal subit medi",
+       fill = "classe squadra") +
+    guides(fill = FALSE) +
+  coord_cartesian(ylim = c(0, 100)), 
+  ncol = 1)
+```
+
+
+La visione aggregata ci conferma che la Juve domina incontrastata soprattutto in difesa. Mentre in attacco la distanza con Roma e Napoli e' molto piu' limitata. Interessante la suddivisione per quantile in base ai punti medi accumulati in questi 3 anni. Chiaramente la Juve dovrebbe essere separata perché fa un campionato a parte ma il resto viene cosi' suddiviso in mini scaglioni da 2 squadre. Questo ci permette di andare a cercare quei cluster che potrebbero valere un investimento.
+
+### Analisi per giocatore
+
+Analisi per giocatore per capire ancora una volta a livello molto basic quali sono le numeriche che bisogna aspettarsi.
+Primo step e' osservare le distribuzioni per ruolo e per anno e andare a curiosare chi sono i piu' produttivi degli ultimi anni
+
+```{r}
+distribuzione_var <- function(x, var_target) {
+  
+  x %>%
+    rename_("var" = var_target) %>%
+    summarise(N = n(),
+              min = quantile(var, na.rm = T, probs = 0.0),
+              q10 = quantile(var, na.rm = T, probs = 0.1),
+              q20 = quantile(var, na.rm = T, probs = 0.2),
+              q30 = quantile(var, na.rm = T, probs = 0.3),
+              q40 = quantile(var, na.rm = T, probs = 0.4),
+              q50 = quantile(var, na.rm = T, probs = 0.5),
+              q60 = quantile(var, na.rm = T, probs = 0.6),
+              q70 = quantile(var, na.rm = T, probs = 0.7),
+              q80 = quantile(var, na.rm = T, probs = 0.8),
+              q90 = quantile(var, na.rm = T, probs = 0.9),
+              max = quantile(var, na.rm = T, probs = 1.0)) %>%
+    mutate(variabile = var_target) %>%
+    select(variabile, anno:max)
+  
+}
+
+df_in %>%
+  mutate(gf_p = gf_p + rig_f) %>%
+  filter(pg > 10) %>%
+  group_by(anno, r) %>%
+  distribuzione_var(var_target = "gf_p")
+
+df_in %>%
+  filter(pg > 10) %>%
+  group_by(anno, r) %>%
+  distribuzione_var(var_target = "ass")
+
+```
+
+La top 20 per stagione permette soprattutto di capire quanti sono i centrocampisti e quindi permette di ragionare se sia conveniente investire nei top di centrocampo.
+
+```{r fig.height=8, fig.width=11, message=FALSE, warning=FALSE}
+
+df_in <- df_in %>%
+  mutate(gf_p = gf_p + rig_f)
+
+grid.arrange(df_in %>%
+  filter(pg > 5, r != "P", anno == "2015_2016") %>%
+  top_n(20, wt = gf_p) %>%
+  ggplot(aes(reorder(nome, -gf_p), gf_p, fill = r)) +
+  geom_bar(stat = "identity", alpha = 0.7, col = "black") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Goal fatti per stagione", 
+       x = "giocatore", y = "goal fatti",
+       fill = "ruolo") +
+  facet_grid(.~anno, scales = "free_x") +
+  guides(fill = FALSE) +
+  coord_cartesian(ylim = c(0, 35)),
+  df_in %>%
+  filter(pg > 5, r != "P", anno == "2016_2017") %>%
+  top_n(20, wt = gf_p) %>%
+  ggplot(aes(reorder(nome, -gf_p), gf_p, fill = r)) +
+  geom_bar(stat = "identity", alpha = 0.7, col = "black") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Goal fatti per stagione", 
+       x = "giocatore", y = "goal fatti",
+       fill = "ruolo") +
+  facet_grid(.~anno, scales = "free_x") +
+  guides(fill = FALSE) +
+  coord_cartesian(ylim = c(0, 35)),
+  df_in %>%
+  filter(pg > 5, r != "P", anno == "2017_2018") %>%
+  top_n(20, wt = gf_p) %>%
+  ggplot(aes(reorder(nome, -gf_p), gf_p, fill = r)) +
+  geom_bar(stat = "identity", alpha = 0.7, col = "black") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1)) +
+  labs(title = "Goal fatti per stagione", 
+       x = "giocatore", y = "goal fatti",
+       fill = "ruolo") +
+  facet_grid(.~anno, scales = "free_x") +
+  guides(fill = FALSE) +
+  coord_cartesian(ylim = c(0, 35)),
+  ncol = 3)
+```
+
+Dovendo sintetizzare la peformance di un giocatore non si puo' non passare dal fanta voto. Questa misura comprende i goal e assist fatti scontati dalle penalita'.
+
+```{r}
+df_in %>%
+  filter(pg > 10) %>%
+  ggplot(aes(mf, fill = r)) +
+  geom_histogram(binwidth = 0.2, col = "black", alpha = 0.7) +
+  facet_grid(r~anno, scales = "free_y")+ 
+  theme_bw()
+```
+
+
+
+
+
+
+
+
+Ragionamenti sparsi
+ipotesi:
+default = pg < 15 & mf < quantile(mf, probs = 0.75)
+
+```{r}
+df_in_d = df_in %>%
+  group_by(r) %>%
+  mutate(status = ifelse(pg < 15 & mf < quantile(mf, probs = 0.75), 1, 0)) %>%
+  ungroup()
+
+df_in_d_train <- df_in_d %>% filter(anno == "2016_2017")
+
+df_in_d_train %>%
+  filter(pg > 5) %>%
+  group_by(r, squadra_classe) %>%
+  summarise(td = sum(status)/n())
+
+
+```
+
+
+
+```{r}
+df_in_d_train %>%
+  mutate(qt_i = as.numeric(qt_i)) %>%
+  ggplot(aes(qt_i, status)) +
+  geom_point()
+
+lm()
+
+```
+
