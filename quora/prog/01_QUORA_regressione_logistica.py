@@ -123,5 +123,5 @@ for thresh in np.arange(0.1, 0.201, 0.01):
     print("F1 score at threshold {0} is {1}".format(thresh, metrics.f1_score(val_y, (pred_val_y>thresh).astype(int))))
 
 
-
+# mostro la relazione trovata tra le parole e il target
 eli5.show_weights(model, vec=tfidf_vec, top=100, feature_filter=lambda x: x != '<BIAS>')
